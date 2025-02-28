@@ -32,7 +32,7 @@ jobs:
         mkdir deployment-package
         cp -r *.py deployment-package/
         cp -r venv/lib/python*/site-packages/* deployment-package/
-        zip -r function.zip .  # Create a ZIP of your Lambda function's code
+        zip -r function.zip  deployment-package/# Create a ZIP of your Lambda function's code
         aws lambda update-function-code \
           --function-name ${{ secrets.LAMBDA_NAME }} \
           --zip-file fileb://function.zip
