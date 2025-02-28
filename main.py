@@ -1,75 +1,187 @@
-from flask import Flask, request
+import logging
+from calendar import weekday
+
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 from service import WeatherService
 from datetime import datetime
-# creating a Flask app
+from dotenv import load_dotenv
+from os import environ as env
+from functools import wraps
+from flask_restx import Api, Resource, fields
+
+# Load .env file to environment
+load_dotenv()
+
+# Creating a Flask app
 app = Flask(__name__)
+CORS(app, origins=["http://localhost:3000, https://cristianmendivil.com"])
 
-@app.route('/forecast/<city>', methods=['GET'])
-def forecast(city: str):
-    if request.method == 'GET':
-        data = WeatherService().get_forecast(city)
-        resp_data = {
-            "alerts": data["alerts"],
-            "current": {
-                "condition": {
-                    "icon": data["current"]["condition"]["icon"].strip("//"),
-                    "text": data["current"]["condition"]["text"].strip()
+# Set up Flask-RESTX API
+api = Api(app, version="1.0", title="Weather API", description="A simple Weather API with documentation")
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler = logging.StreamHandler()
+handler.setFormatter(formatter)
+app.logger.addHandler(handler)
+
+# Define response models
+condition_model = api.model('Condition', {
+    'icon': fields.String(description='URL of the weather icon'),
+    'text': fields.String(description='Weather condition text')
+})
+
+hour_model = api.model('HourForecast', {
+    'time': fields.String(description='Time of forecast'),
+    'temp': fields.Integer(description='Hourly temperature'),
+    'condition': fields.Nested(condition_model)
+})
+
+day_model = api.model('DayForecast', {
+    'date': fields.String(description='Date of forecast'),
+    'date_day': fields.String(description='Day of the week'),
+    'day': fields.Nested(api.model('Day', {
+        'avgtemp': fields.Integer(description='Average temperature for the day'),
+        'mintemp': fields.Integer(description='Minimum temperature for the day'),
+        'maxtemp': fields.Integer(description='Maximum temperature for the day'),
+        'condition': fields.Nested(condition_model)
+    })),
+    'hour': fields.List(fields.Nested(hour_model))
+})
+
+city_model = api.model("City", {
+    'name': fields.String(description='City name'),
+    'region': fields.String(description='City region'),
+    'country': fields.String(description='City country'),
+    'url': fields.String(description='City url name')
+})
+
+
+location_model = api.model('Location', {
+    'name': fields.String(description='City name'),
+    'localtime': fields.String(description='Local time of the city')
+})
+
+forecast_response_model = api.model('ForecastResponse', {
+    'current': fields.Nested(condition_model),
+    'temp': fields.Integer(description='Current temperature'),
+    'forecast': fields.List(fields.Nested(day_model)),
+    'location': fields.Nested(location_model)
+})
+
+error_model = api.model('ErrorResponse', {
+    'error': fields.String(description='Error message'),
+    'details': fields.String(description='Additional details')
+})
+
+
+@api.route('/forecast/<string:city>/<string:unit>')
+@api.doc(description="Get the weather forecast for a city in the given unit (C or F)")
+@api.response(200, 'Success', forecast_response_model)
+@api.response(400, 'Invalid Request', error_model)
+@api.response(500, 'Internal Server Error', error_model)
+class Forecast(Resource):
+    def get(self, city: str, unit: str):
+        """
+        Returns the weather forecast for the specified city and temperature unit.
+        """
+        try:
+            if unit.lower() not in ['c', 'f']:
+                return {"error": "Invalid temperature unit", "details": unit}, 400
+
+            data = WeatherService().get_forecast(city)
+            if not data:
+                return {"error": "City not found", "details": city}, 400
+
+            resp_data = {
+                "current": {
+                    "condition": {
+                        "icon": data["current"]["condition"]["icon"].strip("//"),
+                        "text": data["current"]["condition"]["text"].strip()
+                    },
+                    "temp": round(data["current"]["temp_{}".format(unit)]),
                 },
-                "temp_c": round(data["current"]["temp_c"]),
-                "temp_f": round(data["current"]["temp_f"])
-            },
-            "forecast": {"forecastday": []},
-            "location": {
-                "name": data["location"]["name"],
-                "localtime": data["location"]["localtime"],
+                "forecast": [],
+                "location": {
+                    "name": data["location"]["name"],
+                    "localtime": data["location"]["localtime"],
+                }
             }
-        }
-        current_time = data["location"]["localtime"]
-        latest_hour_time = datetime.strptime(current_time, "%Y-%m-%d %H:%M").replace(minute=0)
-        for forecastday in data["forecast"]["forecastday"]:
-            temp_dict = {
-             "date": forecastday["date"],
-             "day": {
-                 "avgtemp_c": round(forecastday["day"]["avgtemp_c"]),
-                 "avgtemp_f": round(forecastday["day"]["avgtemp_f"]),
-                 "mintemp_c": round(forecastday["day"]["mintemp_c"]),
-                 "mintemp_f": round(forecastday["day"]["mintemp_f"]),
-                 "maxtemp_c": round(forecastday["day"]["maxtemp_c"]),
-                 "maxtemp_f": round(forecastday["day"]["maxtemp_f"]),
-                 "condition": {
-                     "icon": forecastday["day"]["condition"]["icon"].strip("//"),
-                     "text": forecastday["day"]["condition"]["text"].strip()
-                 }
-             },
-             "hour": []
-            }
+            current_time = data["location"]["localtime"]
+            latest_hour_time = datetime.strptime(current_time, "%Y-%m-%d %H:%M").replace(minute=0)
 
-            for hour in forecastday["hour"]:
-                if latest_hour_time.date() != datetime.strptime(forecastday["date"], "%Y-%m-%d").date():
-                    continue
-
-                date = datetime.strptime(hour["time"], "%Y-%m-%d %H:%M")
-                if latest_hour_time <= date:
-                    temp_dict["hour"].append({
-                        "temp_c": round(hour["temp_c"]),
-                        "temp_f": round(hour["temp_f"]),
+            for forecastday in data["forecast"]["forecastday"]:
+                week_day = datetime.strptime(forecastday["date"], "%Y-%m-%d").date().strftime("%A")
+                date_now = datetime.now()
+                if week_day == date_now.date().strftime("%A"):
+                    week_day = "Today"
+                temp_dict = {
+                    "date": forecastday["date"],
+                    "week_day": week_day,
+                    "day": {
+                        "avgtemp": round(forecastday["day"]["avgtemp_{}".format(unit)]),
+                        "mintemp": round(forecastday["day"]["mintemp_{}".format(unit)]),
+                        "maxtemp": round(forecastday["day"]["maxtemp_{}".format(unit)]),
                         "condition": {
-                            "icon": hour["condition"]["icon"].strip("//"),
-                            "text": hour["condition"]["text"].strip()
-                        },
-                        "time": hour["time"]
-                    })
-            resp_data["forecast"]["forecastday"].append(temp_dict)
+                            "icon": forecastday["day"]["condition"]["icon"].strip("//"),
+                            "text": forecastday["day"]["condition"]["text"].strip()
+                        }
+                    },
+                    "hour": []
+                }
 
-        return resp_data
+                for hour in forecastday["hour"]:
+                    if latest_hour_time.date() != datetime.strptime(forecastday["date"], "%Y-%m-%d").date():
+                        continue
+
+                    date = datetime.strptime(hour["time"], "%Y-%m-%d %H:%M")
+                    time = date.strftime("%-I%p")
+                    if time == date_now.time().strftime("%-I%p"):
+                        time = "Now"
+                    if latest_hour_time <= date:
+                        temp_dict["hour"].append({
+                            "temp": round(hour["temp_{}".format(unit)]),
+                            "condition": {
+                                "icon": hour["condition"]["icon"].strip("//"),
+                                "text": hour["condition"]["text"].strip()
+                            },
+                            "time": time
+                        })
+                resp_data["forecast"].append(temp_dict)
+
+            return resp_data
+        except Exception as err:
+            return {"error": "Unexpected error", "details": str(err)}, 500
 
 
-@app.route('/search/<city>', methods=['GET'])
-def search(city: str):
-    if request.method == 'GET':
-        return WeatherService().search_city(city)
+@api.route('/search/<string:city>')
+@api.doc(description="Search for a city based on the given name")
+@api.response(200, 'Success', [city_model])
+@api.response(500, 'Internal Server Error', error_model)
+class Search(Resource):
+    def get(self, city: str):
+        """
+        Returns a list of cities matching the search term.
+        """
+        try:
+            resp = WeatherService().search_city(city)
+            output = []
+
+            for city in resp:
+                cityData = {}
+                cityData["name"] = city["name"]
+                cityData["region"] = city["region"]
+                cityData["country"] = city["country"]
+                cityData["url"] = city["url"]
+
+                output.append(cityData)
+            return output
+        except Exception as err:
+            return {"error": "Unexpected error", "details": str(err)}, 500
 
 
-# driver function
+# Driver function
 if __name__ == '__main__':
     app.run(debug=True)
