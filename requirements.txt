@@ -19,6 +19,7 @@ python-dotenv==1.0.1
 pytz==2025.1
 referencing==0.36.2
 requests==2.32.3
+rpds==5.1.0
 rpds-py==0.23.1
 typing_extensions==4.12.2
 urllib3==2.2.3
