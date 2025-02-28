@@ -1,6 +1,6 @@
 import logging
 from calendar import weekday
-
+from asgiref.wsgi import WsgiToAsgi
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from service import WeatherService
@@ -181,6 +181,7 @@ class Search(Resource):
         except Exception as err:
             return {"error": "Unexpected error", "details": str(err)}, 500
 
+asgi_app = WsgiToAsgi(app)
 
 # Driver function
 if __name__ == '__main__':
