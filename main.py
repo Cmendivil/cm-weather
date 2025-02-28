@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from os import environ as env
 from functools import wraps
 from flask_restful import Api, Resource, reqparse, fields, marshal_with
-
+from asgiref.wsgi import WsgiToAsgi
 # Load .env file to environment
 load_dotenv()
 
@@ -28,50 +28,50 @@ app.logger.addHandler(handler)
 
 # Define response models
 condition_fields = {
-    'icon': fields.String(description='URL of the weather icon'),
-    'text': fields.String(description='Weather condition text')
+    'icon': fields.String(),
+    'text': fields.String()
 }
 
 hour_fields = {
-    'time': fields.String(description='Time of forecast'),
-    'temp': fields.Integer(description='Hourly temperature'),
+    'time': fields.String(),
+    'temp': fields.Integer(),
     'condition': fields.Nested(condition_fields)
 }
 
 day_fields = {
-    'date': fields.String(description='Date of forecast'),
-    'date_day': fields.String(description='Day of the week'),
+    'date': fields.String(),
+    'date_day': fields.String(),
     'day': fields.Nested({
-        'avgtemp': fields.Integer(description='Average temperature for the day'),
-        'mintemp': fields.Integer(description='Minimum temperature for the day'),
-        'maxtemp': fields.Integer(description='Maximum temperature for the day'),
+        'avgtemp': fields.Integer(),
+        'mintemp': fields.Integer(),
+        'maxtemp': fields.Integer(),
         'condition': fields.Nested(condition_fields)
     }),
     'hour': fields.List(fields.Nested(hour_fields))
 }
 
 city_fields = {
-    'name': fields.String(description='City name'),
-    'region': fields.String(description='City region'),
-    'country': fields.String(description='City country'),
-    'url': fields.String(description='City url name')
+    'name': fields.String(),
+    'region': fields.String(),
+    'country': fields.String(),
+    'url': fields.String()
 }
 
 location_fields = {
-    'name': fields.String(description='City name'),
-    'localtime': fields.String(description='Local time of the city')
+    'name': fields.String(),
+    'localtime': fields.String()
 }
 
 forecast_response_fields = {
     'current': fields.Nested(condition_fields),
-    'temp': fields.Integer(description='Current temperature'),
+    'temp': fields.Integer(),
     'forecast': fields.List(fields.Nested(day_fields)),
     'location': fields.Nested(location_fields)
 }
 
 error_fields = {
-    'error': fields.String(description='Error message'),
-    'details': fields.String(description='Additional details')
+    'error': fields.String(),
+    'details': fields.String()
 }
 
 
