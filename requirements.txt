@@ -1,3 +1,4 @@
+aniso8601==10.0.0
 asgiref==3.8.1
 attrs==25.1.0
 blinker==1.9.0
@@ -9,7 +10,7 @@ filelock==3.17.0
 flasgger==0.9.7.1
 Flask==2.3.3
 flask-cors==5.0.1
-Flask-RESTful==0.2.0
+Flask-RESTful==0.3.9
 future==1.0.0
 gevent==24.11.1
 greenlet==3.1.1
@@ -23,9 +24,9 @@ MarkupSafe==3.0.2
 mistune==3.1.2
 packaging==24.2
 pip3-autoremove==1.2.2
-pycrypto==2.6.1
 PySocks==1.7.1
 python-dotenv==1.0.1
+pytz==2025.1
 PyYAML==6.0.2
 referencing==0.36.2
 requests==2.32.3
