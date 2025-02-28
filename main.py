@@ -1,96 +1,92 @@
 import logging
-from flask import Flask, jsonify
+from calendar import weekday
+from flask import Flask, request, jsonify
 from flask_cors import CORS
-from flask_restful import Api, Resource, reqparse, fields, marshal_with
-from flasgger import Swagger
 from service import WeatherService
 from datetime import datetime
+from dotenv import load_dotenv
+from os import environ as env
+from functools import wraps
+from flask_restx import Api, Resource, fields
 
-# Initialize Flask app
+# Load .env file to environment
+load_dotenv()
+
+# Creating a Flask app
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:3000", "https://cristianmendivil.com"])
-api = Api(app)
+CORS(app, origins=["http://localhost:3000, https://cristianmendivil.com"])
 
-# Configure Swagger
-swagger = Swagger(app)
+# Set up Flask-RESTX API
+api = Api(app, version="1.0", title="Weather API", description="A simple Weather API with documentation")
 
-# Logging configuration
+# Setup logging
 logging.basicConfig(level=logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler = logging.StreamHandler()
+handler.setFormatter(formatter)
+app.logger.addHandler(handler)
 
-# Define response models for Flask-RESTful
-condition_fields = {
-    'icon': fields.String,
-    'text': fields.String
-}
+# Define response models
+condition_model = api.model('Condition', {
+    'icon': fields.String(description='URL of the weather icon'),
+    'text': fields.String(description='Weather condition text')
+})
 
-hour_fields = {
-    'time': fields.String,
-    'temp': fields.Integer,
-    'condition': fields.Nested(condition_fields)
-}
+hour_model = api.model('HourForecast', {
+    'time': fields.String(description='Time of forecast'),
+    'temp': fields.Integer(description='Hourly temperature'),
+    'condition': fields.Nested(condition_model)
+})
 
-day_fields = {
-    'date': fields.String,
-    'date_day': fields.String,
-    'day': fields.Nested({
-        'avgtemp': fields.Integer,
-        'mintemp': fields.Integer,
-        'maxtemp': fields.Integer,
-        'condition': fields.Nested(condition_fields)
-    }),
-    'hour': fields.List(fields.Nested(hour_fields))
-}
+day_model = api.model('DayForecast', {
+    'date': fields.String(description='Date of forecast'),
+    'date_day': fields.String(description='Day of the week'),
+    'day': fields.Nested(api.model('Day', {
+        'avgtemp': fields.Integer(description='Average temperature for the day'),
+        'mintemp': fields.Integer(description='Minimum temperature for the day'),
+        'maxtemp': fields.Integer(description='Maximum temperature for the day'),
+        'condition': fields.Nested(condition_model)
+    })),
+    'hour': fields.List(fields.Nested(hour_model))
+})
 
-city_fields = {
-    'name': fields.String,
-    'region': fields.String,
-    'country': fields.String,
-    'url': fields.String
-}
-
-location_fields = {
-    'name': fields.String,
-    'localtime': fields.String
-}
-
-forecast_response_fields = {
-    'current': fields.Nested(condition_fields),
-    'temp': fields.Integer,
-    'forecast': fields.List(fields.Nested(day_fields)),
-    'location': fields.Nested(location_fields)
-}
-
-error_fields = {
-    'error': fields.String,
-    'details': fields.String
-}
+city_model = api.model("City", {
+    'name': fields.String(description='City name'),
+    'region': fields.String(description='City region'),
+    'country': fields.String(description='City country'),
+    'url': fields.String(description='City url name')
+})
 
 
+location_model = api.model('Location', {
+    'name': fields.String(description='City name'),
+    'localtime': fields.String(description='Local time of the city')
+})
+
+forecast_response_model = api.model('ForecastResponse', {
+    'current': fields.Nested(condition_model),
+    'temp': fields.Integer(description='Current temperature'),
+    'forecast': fields.List(fields.Nested(day_model)),
+    'location': fields.Nested(location_model)
+})
+
+error_model = api.model('ErrorResponse', {
+    'error': fields.String(description='Error message'),
+    'details': fields.String(description='Additional details')
+})
+
+
+
+@api.route('/forecast/<string:city>/<string:unit>')
+@api.doc(description="Get the weather forecast for a city in the given unit (C or F)")
+@api.response(200, 'Success', forecast_response_model)
+@api.response(400, 'Invalid Request', error_model)
+@api.response(500, 'Internal Server Error', error_model)
 class Forecast(Resource):
-    """
-    Weather Forecast API
-    ---
-    parameters:
-      - name: city
-        in: path
-        type: string
-        required: true
-        description: Name of the city to fetch weather for.
-      - name: unit
-        in: path
-        type: string
-        required: true
-        description: Temperature unit ('C' or 'F').
-    responses:
-      200:
-        description: Weather forecast retrieved successfully.
-      400:
-        description: Invalid request or city not found.
-      500:
-        description: Internal server error.
-    """
-    @marshal_with(forecast_response_fields)
     def get(self, city: str, unit: str):
+        """
+        Returns the weather forecast for the specified city and temperature unit.
+        """
         try:
             if unit.lower() not in ['c', 'f']:
                 return {"error": "Invalid temperature unit", "details": unit}, 400
@@ -99,7 +95,7 @@ class Forecast(Resource):
             if not data:
                 return {"error": "City not found", "details": city}, 400
 
-            return {
+            resp_data = {
                 "current": {
                     "condition": {
                         "icon": data["current"]["condition"]["icon"].strip("//"),
@@ -113,38 +109,80 @@ class Forecast(Resource):
                     "localtime": data["location"]["localtime"],
                 }
             }
+            current_time = data["location"]["localtime"]
+            latest_hour_time = datetime.strptime(current_time, "%Y-%m-%d %H:%M").replace(minute=0)
+
+            for forecastday in data["forecast"]["forecastday"]:
+                week_day = datetime.strptime(forecastday["date"], "%Y-%m-%d").date().strftime("%A")
+                date_now = datetime.now()
+                if week_day == date_now.date().strftime("%A"):
+                    week_day = "Today"
+                temp_dict = {
+                    "date": forecastday["date"],
+                    "week_day": week_day,
+                    "day": {
+                        "avgtemp": round(forecastday["day"]["avgtemp_{}".format(unit)]),
+                        "mintemp": round(forecastday["day"]["mintemp_{}".format(unit)]),
+                        "maxtemp": round(forecastday["day"]["maxtemp_{}".format(unit)]),
+                        "condition": {
+                            "icon": forecastday["day"]["condition"]["icon"].strip("//"),
+                            "text": forecastday["day"]["condition"]["text"].strip()
+                        }
+                    },
+                    "hour": []
+                }
+
+                for hour in forecastday["hour"]:
+                    if latest_hour_time.date() != datetime.strptime(forecastday["date"], "%Y-%m-%d").date():
+                        continue
+
+                    date = datetime.strptime(hour["time"], "%Y-%m-%d %H:%M")
+                    time = date.strftime("%-I%p")
+                    if time == date_now.time().strftime("%-I%p"):
+                        time = "Now"
+                    if latest_hour_time <= date:
+                        temp_dict["hour"].append({
+                            "temp": round(hour["temp_{}".format(unit)]),
+                            "condition": {
+                                "icon": hour["condition"]["icon"].strip("//"),
+                                "text": hour["condition"]["text"].strip()
+                            },
+                            "time": time
+                        })
+                resp_data["forecast"].append(temp_dict)
+
+            return resp_data
         except Exception as err:
             return {"error": "Unexpected error", "details": str(err)}, 500
 
 
+@api.route('/search/<string:city>')
+@api.doc(description="Search for a city based on the given name")
+@api.response(200, 'Success', [city_model])
+@api.response(500, 'Internal Server Error', error_model)
 class Search(Resource):
-    """
-    City Search API
-    ---
-    parameters:
-      - name: city
-        in: path
-        type: string
-        required: true
-        description: Name of the city to search.
-    responses:
-      200:
-        description: List of matching cities.
-      500:
-        description: Internal server error.
-    """
-    @marshal_with(city_fields)
     def get(self, city: str):
+        """
+        Returns a list of cities matching the search term.
+        """
         try:
-            return WeatherService().search_city(city)
+            resp = WeatherService().search_city(city)
+            output = []
+
+            for city in resp:
+                cityData = {}
+                cityData["name"] = city["name"]
+                cityData["region"] = city["region"]
+                cityData["country"] = city["country"]
+                cityData["url"] = city["url"]
+
+                output.append(cityData)
+            return output
         except Exception as err:
             return {"error": "Unexpected error", "details": str(err)}, 500
 
 
-# Register API endpoints
-api.add_resource(Forecast, '/forecast/<string:city>/<string:unit>')
-api.add_resource(Search, '/search/<string:city>')
 
-# Run the Flask app
+# Driver function
 if __name__ == '__main__':
     app.run(debug=True)
