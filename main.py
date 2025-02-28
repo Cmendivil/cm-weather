@@ -1,6 +1,5 @@
 import logging
 from calendar import weekday
-from asgiref.wsgi import WsgiToAsgi
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from service import WeatherService
@@ -8,7 +7,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from os import environ as env
 from functools import wraps
-from flask_restx import Api, Resource, fields
+from flask_restful import Api, Resource, reqparse, fields, marshal_with
 
 # Load .env file to environment
 load_dotenv()
@@ -17,8 +16,8 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:3000, https://cristianmendivil.com"])
 
-# Set up Flask-RESTX API
-api = Api(app, version="1.0", title="Weather API", description="A simple Weather API with documentation")
+# Set up Flask-RESTful API
+api = Api(app)
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -28,60 +27,54 @@ handler.setFormatter(formatter)
 app.logger.addHandler(handler)
 
 # Define response models
-condition_model = api.model('Condition', {
+condition_fields = {
     'icon': fields.String(description='URL of the weather icon'),
     'text': fields.String(description='Weather condition text')
-})
+}
 
-hour_model = api.model('HourForecast', {
+hour_fields = {
     'time': fields.String(description='Time of forecast'),
     'temp': fields.Integer(description='Hourly temperature'),
-    'condition': fields.Nested(condition_model)
-})
+    'condition': fields.Nested(condition_fields)
+}
 
-day_model = api.model('DayForecast', {
+day_fields = {
     'date': fields.String(description='Date of forecast'),
     'date_day': fields.String(description='Day of the week'),
-    'day': fields.Nested(api.model('Day', {
+    'day': fields.Nested({
         'avgtemp': fields.Integer(description='Average temperature for the day'),
         'mintemp': fields.Integer(description='Minimum temperature for the day'),
         'maxtemp': fields.Integer(description='Maximum temperature for the day'),
-        'condition': fields.Nested(condition_model)
-    })),
-    'hour': fields.List(fields.Nested(hour_model))
-})
+        'condition': fields.Nested(condition_fields)
+    }),
+    'hour': fields.List(fields.Nested(hour_fields))
+}
 
-city_model = api.model("City", {
+city_fields = {
     'name': fields.String(description='City name'),
     'region': fields.String(description='City region'),
     'country': fields.String(description='City country'),
     'url': fields.String(description='City url name')
-})
+}
 
-
-location_model = api.model('Location', {
+location_fields = {
     'name': fields.String(description='City name'),
     'localtime': fields.String(description='Local time of the city')
-})
+}
 
-forecast_response_model = api.model('ForecastResponse', {
-    'current': fields.Nested(condition_model),
+forecast_response_fields = {
+    'current': fields.Nested(condition_fields),
     'temp': fields.Integer(description='Current temperature'),
-    'forecast': fields.List(fields.Nested(day_model)),
-    'location': fields.Nested(location_model)
-})
+    'forecast': fields.List(fields.Nested(day_fields)),
+    'location': fields.Nested(location_fields)
+}
 
-error_model = api.model('ErrorResponse', {
+error_fields = {
     'error': fields.String(description='Error message'),
     'details': fields.String(description='Additional details')
-})
+}
 
 
-@api.route('/forecast/<string:city>/<string:unit>')
-@api.doc(description="Get the weather forecast for a city in the given unit (C or F)")
-@api.response(200, 'Success', forecast_response_model)
-@api.response(400, 'Invalid Request', error_model)
-@api.response(500, 'Internal Server Error', error_model)
 class Forecast(Resource):
     def get(self, city: str, unit: str):
         """
@@ -151,15 +144,11 @@ class Forecast(Resource):
                         })
                 resp_data["forecast"].append(temp_dict)
 
-            return resp_data
+            return marshal_with(forecast_response_fields)(resp_data)
         except Exception as err:
-            return {"error": "Unexpected error", "details": str(err)}, 500
+            return marshal_with(error_fields)({"error": "Unexpected error", "details": str(err)}), 500
 
 
-@api.route('/search/<string:city>')
-@api.doc(description="Search for a city based on the given name")
-@api.response(200, 'Success', [city_model])
-@api.response(500, 'Internal Server Error', error_model)
 class Search(Resource):
     def get(self, city: str):
         """
@@ -177,9 +166,15 @@ class Search(Resource):
                 cityData["url"] = city["url"]
 
                 output.append(cityData)
-            return output
+            return marshal_with([city_fields])(output)
         except Exception as err:
-            return {"error": "Unexpected error", "details": str(err)}, 500
+            return marshal_with(error_fields)({"error": "Unexpected error", "details": str(err)}), 500
+
+
+# Add routes to the API
+api.add_resource(Forecast, '/forecast/<string:city>/<string:unit>')
+api.add_resource(Search, '/search/<string:city>')
+
 
 asgi_app = WsgiToAsgi(app)
 
