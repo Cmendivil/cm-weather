@@ -10,7 +10,7 @@ filelock==3.17.0
 flasgger==0.9.7.1
 Flask==2.3.3
 flask-cors==5.0.1
-Flask-RESTful==0.3.9
+Flask-RESTful==0.3.5
 future==1.0.0
 gevent==24.11.1
 greenlet==3.1.1
