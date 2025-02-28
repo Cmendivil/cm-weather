@@ -37,4 +37,3 @@ jobs:
         aws lambda update-function-code \
           --function-name ${{ secrets.LAMBDA_NAME }} \
           --zip-file fileb://function.zip
-          --handler lambda_function.lambda_handler
