@@ -17,7 +17,7 @@ app = Flask(__name__)
 CORS(app, origins=["http://localhost:3000, https://cristianmendivil.com"])
 
 # Set up Flask-RESTX API
-api = Api(app, version="1.0", title="Weather API", description="A simple Weather API with documentation")
+api = Api(app, version="1.0", title="Weather API", description="A simple Weather API with documentation", doc="/redoc")
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -25,6 +25,12 @@ formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messag
 handler = logging.StreamHandler()
 handler.setFormatter(formatter)
 app.logger.addHandler(handler)
+
+
+@app.route("/swagger.json")
+def swagger_json():
+    return api.__schema__
+
 
 # Define response models
 condition_model = api.model('Condition', {
@@ -57,7 +63,6 @@ city_model = api.model("City", {
     'url': fields.String(description='City url name')
 })
 
-
 location_model = api.model('Location', {
     'name': fields.String(description='City name'),
     'localtime': fields.String(description='Local time of the city')
@@ -74,7 +79,6 @@ error_model = api.model('ErrorResponse', {
     'error': fields.String(description='Error message'),
     'details': fields.String(description='Additional details')
 })
-
 
 
 @api.route('/forecast/<string:city>/<string:unit>')
@@ -184,9 +188,10 @@ class Search(Resource):
         except Exception as err:
             return {"error": "Unexpected error", "details": str(err)}, 500
 
+
 @app.after_request
 def after_request(response):
-    response.headers.add("Access-Control-Allow-Origin", "http://localhost:3000")
+    response.headers.add("Access-Control-Allow-Origin", "*")
     response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
     response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
     return response
