@@ -14,10 +14,10 @@ load_dotenv()
 
 # Creating a Flask app
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:3000, https://cristianmendivil.com"])
+CORS(app, origins=["http://localhost:3000/*, https://cristianmendivil.com"])
 
 # Set up Flask-RESTX API
-api = Api(app, version="1.0", title="Weather API", description="A simple Weather API with documentation", doc="/redoc")
+api = Api(app, version="1.0", title="Weather API", description="A simple Weather API with documentation", openapi="3.0.0")
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
