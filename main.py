@@ -85,6 +85,7 @@ error_model = api.model('ErrorResponse', {
 class Forecast(Resource):
     def get(self, city: str, unit: str):
         """
+        /forecast/<city>/<unit>
         Returns the weather forecast for the specified city and temperature unit.
         """
         try:
@@ -163,9 +164,11 @@ class Forecast(Resource):
 class Search(Resource):
     def get(self, city: str):
         """
+        /search/<city>
         Returns a list of cities matching the search term.
         """
         try:
+            print("In Search")
             resp = WeatherService().search_city(city)
             output = []
 
@@ -181,8 +184,11 @@ class Search(Resource):
         except Exception as err:
             return {"error": "Unexpected error", "details": str(err)}, 500
 
+@app.after_request
+def after_request(response):
+    response.headers.add("Access-Control-Allow-Origin", "http://localhost:3000")
+    response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+    response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+    return response
 
 
-# Driver function
-if __name__ == '__main__':
-    app.run(debug=True)
